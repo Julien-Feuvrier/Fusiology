@@ -30,20 +30,36 @@ namespace Fusiology.InverseKinematics
         /// It corresponds to the distance tolerance between <see cref="m_Target"/> and the edge joint bellow which the FABRIK algorithm stops.
         /// </summary>
         [SerializeField]
-        private float m_Tolerance = 0.01f;
+        private float m_Tolerance = 0.01f;  // TODO: auto compute tolerance (from a % of the total joints length)
 
         #endregion Private inspector fields
 
         #region Private fields
 
         /// <summary>
-        /// The joints positions array which is preallocated to avoid multiple allocations in <see cref="Run"/>.
+        /// The joints positions array indexed by the joint ID which is preallocated to avoid multiple allocations in <see cref="Run"/>.
         /// </summary>
         private Vector3[] m_JointsPositions;
+
+        /// <summary>
+        /// The inter-joint distances array which is preallocated to avoid multiple allocations in <see cref="Run"/>.
+        /// The element of index i is the distance between the joint i and i + 1 in the <see cref="m_Joints"/> array.
+        /// </summary>
+        private float[] m_InterJointDistances;
+
+        /// <summary>
+        /// The sum of all the inter-joint distances.
+        /// </summary>
+        private float m_InterJointTotalDistance;
 
         #endregion Private fields
 
         #region Life-cycle methods
+
+        /// <summary>
+        /// Set up the FABRIK algorithm.
+        /// </summary>
+        private void OnEnable() => SetUp();
 
         /// <summary>
         /// Run the FABRIK algorithm each frame when this component is enabled.
@@ -55,36 +71,49 @@ namespace Fusiology.InverseKinematics
         #region FABRIK methods
 
         /// <summary>
-        /// Run the FABRIK algorithm which updates the positions of all the <see cref="m_Joints"/> in order to move the edge joint on the <see cref="m_Target"/>.
+        /// Set up the FABRIK algorithm by preallocating some arrays.
+        /// It must be invoked each time a new joint is inserted into <see cref="m_Joints"/> or when the distance between joints is changed.
         /// </summary>
-        [ContextMenu(nameof(Run))]
-        private void Run()
+        [ContextMenu(nameof(SetUp))]
+        private void SetUp()
         {
             if (m_JointsPositions == null || m_JointsPositions.Length != m_Joints.Length)
             {
                 m_JointsPositions = new Vector3[m_Joints.Length];
             }
 
+            if (m_InterJointDistances == null || m_InterJointDistances.Length != m_Joints.Length - 1)
+            {
+                m_InterJointDistances = new float[m_Joints.Length - 1];
+            }
+
+            for (int i = 0; i < m_InterJointDistances.Length; i++)
+            {
+                m_InterJointDistances[i] = Vector3.Distance(m_Joints[i].position, m_Joints[i + 1].position);
+            }
+
+            m_InterJointTotalDistance = m_InterJointDistances.Sum();
+        }
+
+        /// <summary>
+        /// Run the FABRIK algorithm which updates the positions of all the <see cref="m_Joints"/> in order to move the edge joint on the <see cref="m_Target"/>.
+        /// </summary>
+        [ContextMenu(nameof(Run))]
+        private void Run()  // TODO: add comments + optimize + improve loop index management
+        {
+            // Get the current joints transforms positions.
             for (int i = 0; i < m_Joints.Length; i++)
             {
                 m_JointsPositions[i] = m_Joints[i].position;
             }
 
-            float[] jointsDistances = new float[m_JointsPositions.Length - 1];
-            float distance = Vector3.Distance(m_JointsPositions[0], m_Target.position);
-
-            for (int i = 0; i < jointsDistances.Length; i++)
+            // Check if target is not within reach.
+            if (m_InterJointTotalDistance < Vector3.Distance(m_JointsPositions[0], m_Target.position))  // TODO: use squared distance ?
             {
-                jointsDistances[i] = Vector3.Distance(m_JointsPositions[i], m_JointsPositions[i + 1]);
-            }
-
-            // Target is not within reach.
-            if (jointsDistances.Sum() < distance)
-            {
-                for (int i = 0; i < jointsDistances.Length; i++)
+                for (int i = 0; i < m_InterJointDistances.Length; i++)
                 {
                     float ri = Vector3.Distance(m_Target.position, m_JointsPositions[i]);
-                    float lambdai = jointsDistances[i] / ri;
+                    float lambdai = m_InterJointDistances[i] / ri;
                     m_JointsPositions[i + 1] = (1 - lambdai) * m_JointsPositions[i] + lambdai * m_Target.position;
                 }
             }
@@ -101,7 +130,7 @@ namespace Fusiology.InverseKinematics
                     for (int i = lastJointIndex - 1; i >= 0; i--)
                     {
                         float ri = Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
-                        float lambdai = jointsDistances[i] / ri;
+                        float lambdai = m_InterJointDistances[i] / ri;
                         m_JointsPositions[i] = (1 - lambdai) * m_JointsPositions[i + 1] + lambdai * m_JointsPositions[i];
                     }
 
@@ -111,12 +140,13 @@ namespace Fusiology.InverseKinematics
                     for (int i = 0; i < lastJointIndex; i++)
                     {
                         float ri = Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
-                        float lambdai = jointsDistances[i] / ri;
+                        float lambdai = m_InterJointDistances[i] / ri;
                         m_JointsPositions[i + 1] = (1 - lambdai) * m_JointsPositions[i] + lambdai * m_JointsPositions[i + 1];
                     }
                 }
             }
 
+            // Apply the new joints positions and rotations.
             for (int i = 0; i < m_Joints.Length - 1; i++)
             {
                 m_Joints[i].SetPositionAndRotation(m_JointsPositions[i], Quaternion.FromToRotation(Vector3.up, m_JointsPositions[i + 1] - m_JointsPositions[i]));

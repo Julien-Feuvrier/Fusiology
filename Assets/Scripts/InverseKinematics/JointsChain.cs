@@ -123,7 +123,7 @@ namespace Fusiology.InverseKinematics
         /// Run the FABRIK algorithm which updates the positions of all the <see cref="m_Joints"/> in order to move the end joint on the <see cref="m_Target"/>.
         /// </summary>
         [ContextMenu(nameof(UpdateChain))]
-        private void UpdateChain()  // TODO: add comments + optimize + improve loop index management
+        private void UpdateChain()  // TODO: improve loop index management
         {
             // Get the current joints transforms positions.
             for (int i = 0; i < m_Joints.Length; i++)
@@ -136,36 +136,34 @@ namespace Fusiology.InverseKinematics
             {
                 for (int i = 0; i < m_InterJointDistances.Length; i++)
                 {
-                    float ri = Vector3.Distance(m_Target, m_JointsPositions[i]);
-                    float lambdai = m_InterJointDistances[i] / ri;
-                    m_JointsPositions[i + 1] = (1 - lambdai) * m_JointsPositions[i] + lambdai * m_Target;
+                    float segmentProportion = m_InterJointDistances[i] / Vector3.Distance(m_Target, m_JointsPositions[i]);
+                    m_JointsPositions[i + 1] = (1 - segmentProportion) * m_JointsPositions[i] + segmentProportion * m_Target;
                 }
             }
             else
             {
+                // Target is reachable, start the forward and backward reaching iterations.
                 Vector3 initialPosition = m_JointsPositions[0];
                 int lastJointIndex = m_JointsPositions.Length - 1;
 
                 while (Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target) > m_Tolerance)    // TODO: fix infinite loop
                 {
-                    // Forward reaching.
+                    // Forward reaching: set the last joint on the target and propagate the movement to the other joints.
                     m_JointsPositions[lastJointIndex] = m_Target;
 
                     for (int i = lastJointIndex - 1; i >= 0; i--)
                     {
-                        float ri = Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
-                        float lambdai = m_InterJointDistances[i] / ri;
-                        m_JointsPositions[i] = (1 - lambdai) * m_JointsPositions[i + 1] + lambdai * m_JointsPositions[i];
+                        float segmentProportion = m_InterJointDistances[i] / Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
+                        m_JointsPositions[i] = (1 - segmentProportion) * m_JointsPositions[i + 1] + segmentProportion * m_JointsPositions[i];
                     }
 
-                    // Backward reaching.
+                    // Backward reaching: set the first joint on the initial position and propagate the movement to the other joints.
                     m_JointsPositions[0] = initialPosition;
 
                     for (int i = 0; i < lastJointIndex; i++)
                     {
-                        float ri = Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
-                        float lambdai = m_InterJointDistances[i] / ri;
-                        m_JointsPositions[i + 1] = (1 - lambdai) * m_JointsPositions[i] + lambdai * m_JointsPositions[i + 1];
+                        float segmentProportion = m_InterJointDistances[i] / Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
+                        m_JointsPositions[i + 1] = (1 - segmentProportion) * m_JointsPositions[i] + segmentProportion * m_JointsPositions[i + 1];
                     }
                 }
             }

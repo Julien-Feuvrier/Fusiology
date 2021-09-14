@@ -145,8 +145,10 @@ namespace Fusiology.InverseKinematics
                 // Target is reachable, start the forward and backward reaching iterations.
                 Vector3 initialPosition = m_JointsPositions[0];
                 int lastJointIndex = m_JointsPositions.Length - 1;
+                int iterationCount = 0;     // TODO: failsafe for debug, remove it in the future
+                Quaternion[] localRotations = new Quaternion[lastJointIndex];
 
-                while (Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target) > m_Tolerance)    // TODO: fix infinite loop
+                while (Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target) > m_Tolerance && iterationCount++ < 30)    // TODO: fix infinite loop
                 {
                     // Forward reaching: set the last joint on the target and propagate the movement to the other joints.
                     m_JointsPositions[lastJointIndex] = m_Target;
@@ -159,12 +161,24 @@ namespace Fusiology.InverseKinematics
 
                     // Backward reaching: set the first joint on the initial position and propagate the movement to the other joints.
                     m_JointsPositions[0] = initialPosition;
+                    localRotations[0] = m_Joints[0].rotation;
 
                     for (int i = 0; i < lastJointIndex; i++)
                     {
                         float segmentProportion = m_InterJointDistances[i] / Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
                         m_JointsPositions[i + 1] = (1 - segmentProportion) * m_JointsPositions[i] + segmentProportion * m_JointsPositions[i + 1];
+                        Vector3 jointForward = localRotations[i] * Vector3.forward;
+                        float angle = Vector3.Angle(jointForward, m_JointsPositions[i + 1] - m_JointsPositions[i]);
+                        if (angle > 45)
+                        {
+                            Debug.Log($"angle > 45 for joint {i}");
+                        }
                     }
+                }
+
+                if (iterationCount >= 30)
+                {
+                    Debug.LogWarning($"{nameof(JointsChain)}: FABRIK infinite iteration");  // TODO
                 }
             }
 

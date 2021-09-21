@@ -146,7 +146,7 @@ namespace Fusiology.InverseKinematics
                 Vector3 initialPosition = m_JointsPositions[0];
                 int lastJointIndex = m_JointsPositions.Length - 1;
                 int iterationCount = 0;     // TODO: failsafe for debug, remove it in the future
-                Quaternion[] localRotations = new Quaternion[lastJointIndex];
+                Quaternion[] localRotations = new Quaternion[lastJointIndex + 1];
 
                 while (Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target) > m_Tolerance && iterationCount++ < 30)    // TODO: fix infinite loop
                 {
@@ -168,11 +168,14 @@ namespace Fusiology.InverseKinematics
                         float segmentProportion = m_InterJointDistances[i] / Vector3.Distance(m_JointsPositions[i + 1], m_JointsPositions[i]);
                         m_JointsPositions[i + 1] = (1 - segmentProportion) * m_JointsPositions[i] + segmentProportion * m_JointsPositions[i + 1];
                         Vector3 jointForward = localRotations[i] * Vector3.forward;
-                        float angle = Vector3.Angle(jointForward, m_JointsPositions[i + 1] - m_JointsPositions[i]);
+                        Vector3 jointVector = m_JointsPositions[i + 1] - m_JointsPositions[i];
+                        float angle = Vector3.Angle(jointForward, jointVector);
                         if (angle > 45)
                         {
-                            Debug.Log($"angle > 45 for joint {i}");
+                            m_JointsPositions[i + 1] = m_JointsPositions[i] + Quaternion.AngleAxis(angle - 45, Vector3.Cross(jointVector, jointForward)) * jointVector;
                         }
+
+                        localRotations[i + 1] = localRotations[i] * Quaternion.FromToRotation(jointForward, m_JointsPositions[i + 1] - m_JointsPositions[i]);
                     }
                 }
 
@@ -186,7 +189,7 @@ namespace Fusiology.InverseKinematics
             m_Joints[0].rotation = Quaternion.FromToRotation(Vector3.forward, m_JointsPositions[1] - m_JointsPositions[0]);     // TODO: optimize by using m_Joints[i].forward instead if Vector3.forward
             for (int i = 1; i < m_Joints.Length - 1; i++)
             {
-                m_Joints[i].SetPositionAndRotation(m_JointsPositions[i], Quaternion.FromToRotation(Vector3.forward, m_JointsPositions[i + 1] - m_JointsPositions[i]));
+                m_Joints[i].SetPositionAndRotation(m_JointsPositions[i], Quaternion.FromToRotation(Vector3.forward, m_JointsPositions[i + 1] - m_JointsPositions[i]));  // TODO: use localRotations array
             }
             m_Joints[m_Joints.Length - 1].position = m_JointsPositions[m_JointsPositions.Length - 1];
         }

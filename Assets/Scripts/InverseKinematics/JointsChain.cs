@@ -134,7 +134,7 @@ namespace Fusiology.InverseKinematics
         /// Run the FABRIK algorithm which updates the positions of all the <see cref="m_Joints"/> in order to move the end joint on the <see cref="m_Target"/>.
         /// </summary>
         [ContextMenu(nameof(UpdateChain))]
-        private void UpdateChain()  // TODO: improve loop index management
+        private void UpdateChain()
         {
             // Get the current joints transforms positions.
             for (int i = 0; i < m_Joints.Length; i++)
@@ -143,7 +143,7 @@ namespace Fusiology.InverseKinematics
             }
 
             // Check if target is not within reach.
-            if (m_InterJointTotalDistance < Vector3.Distance(m_JointsPositions[0], m_Target))  // TODO: use squared distance ?
+            if (m_InterJointTotalDistance < Vector3.Distance(m_JointsPositions[0], m_Target))  // TODO: use squared distance for m_InterJointTotalDistance and for targetDistance
             {
                 for (int i = 0; i < m_InterJointDistances.Length; i++)
                 {
@@ -162,10 +162,11 @@ namespace Fusiology.InverseKinematics
                 // Target is reachable, start the forward and backward reaching iterations.
                 Vector3 initialPosition = m_JointsPositions[0];
                 Quaternion initialRotation = m_JointsRotations[0];
-                int lastJointIndex = m_JointsPositions.Length - 1;
+                int lastJointIndex = m_JointsPositions.Length - 1;  // TODO: improve loop index management
                 int iterationCount = 0;     // TODO: failsafe for debug, remove it in the future
+                float targetDistance = Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target);
 
-                while (Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target) > m_Tolerance && iterationCount++ < 30)    // TODO: fix infinite loop
+                while (targetDistance > m_Tolerance && iterationCount++ < 30)    // TODO: fix infinite loop / all joints aligned issue by adding some randomness
                 {
                     // FORWARD REACHING: set the last joint on the target and propagate the movement to the other joints.
                     m_JointsPositions[lastJointIndex] = m_Target;
@@ -187,11 +188,6 @@ namespace Fusiology.InverseKinematics
                         {
                             Quaternion correctionRotation = Quaternion.AngleAxis(angle - 45, Vector3.Cross(nextJointVector, nextJointForward));
                             m_JointsPositions[i] = m_JointsPositions[i + 1] + Quaternion.Inverse(correctionRotation) * (m_JointsPositions[i] - m_JointsPositions[i + 1]);
-                        }
-
-                        if (i != 0)     // TODO: fix that
-                        {
-                            m_JointsRotations[i] = Quaternion.FromToRotation(Vector3.forward, m_JointsPositions[i] - m_JointsPositions[i - 1]);
                         }
                     }
 
@@ -215,6 +211,15 @@ namespace Fusiology.InverseKinematics
 
                         m_JointsRotations[i + 1] = m_JointsRotations[i] * Quaternion.FromToRotation(jointForward, m_JointsPositions[i + 1] - m_JointsPositions[i]);
                     }
+
+                    // If the iteration could not find more optimal joints chain placement, abort the algorithm and do not change anything in joints transforms.
+                    float lastTargetDistance = targetDistance;
+                    targetDistance = Vector3.Distance(m_JointsPositions[lastJointIndex], m_Target);
+
+                    if (lastTargetDistance <= targetDistance)
+                    {
+                        return;
+                    }
                 }
 
                 if (iterationCount >= 30)
@@ -230,6 +235,8 @@ namespace Fusiology.InverseKinematics
                 m_Joints[i].SetPositionAndRotation(m_JointsPositions[i], Quaternion.FromToRotation(Vector3.forward, m_JointsPositions[i + 1] - m_JointsPositions[i]));  // TODO: use localRotations array
             }
             m_Joints[m_Joints.Length - 1].position = m_JointsPositions[m_JointsPositions.Length - 1];
+
+            // TODO: smooth the movement between the old and the new joints positions if the joints are far away from the new position
         }
 
         #endregion FABRIK methods
